@@ -76,11 +76,13 @@ struct PullResult {
     Status status = Status::Unavailable;
     Progress progress;
     QString error;
+    int http = 0;
 };
 struct PushResult {
     Status status = Status::Unavailable;
     qint64 timestamp = 0;
     QString error;
+    int http = 0;
 };
 
 // Requests belong to a manager that outlives any book, so a position sent while

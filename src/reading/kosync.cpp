@@ -214,6 +214,7 @@ void Client::pull(const QString &document, std::function<void(PullResult)> done)
         PullResult result;
         result.status = statusFor(answer.http);
         result.error = answer.error;
+        result.http = answer.http;
         if (result.status == Status::Ok) {
             result.progress = parseProgress(answer.body);
             // Some servers answer 200 with an empty object for an unknown book.
@@ -232,6 +233,7 @@ void Client::push(const Progress &progress, std::function<void(PushResult)> done
         PushResult result;
         result.status = statusFor(answer.http);
         result.error = answer.error;
+        result.http = answer.http;
         if (result.status == Status::Ok)
             result.timestamp = parseProgress(answer.body).timestamp;
         done(std::move(result));

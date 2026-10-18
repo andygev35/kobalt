@@ -104,7 +104,7 @@ void Session::pull() {
             return;
         self->pulling = false;
         self->settled = true;
-        diagnostic("kosync-pull", {{"status", int(result.status)}});
+        diagnostic("kosync-pull", {{"status", int(result.status)}, {"http", result.http}, {"error", result.error}});
         if (result.status == Status::Unauthorized)
             self->blocked = true;
         if (result.status != Status::Ok)
@@ -157,7 +157,7 @@ void Session::send(const std::shared_ptr<State> &state) {
     const auto path = state->unsentPath;
     const auto document = state->document;
     state->client.push(progress, [weak, path, document, unsent](PushResult result) {
-        diagnostic("kosync-push", {{"status", int(result.status)}});
+        diagnostic("kosync-push", {{"status", int(result.status)}, {"http", result.http}, {"error", result.error}});
         if (result.status == Status::Ok)
             clearUnsent(path, document, unsent.at);
         const auto self = weak.lock();
