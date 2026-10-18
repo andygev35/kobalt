@@ -1,5 +1,7 @@
 #include "reader_inputs.h"
 #include "check.h"
+#include "http_server.h"
+#include "reading/kosync.h"
 #include "reading/reading_book.h"
 #include "reading/appearance_settings.h"
 #include "interfaces/opening_message.h"
@@ -13,6 +15,7 @@
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
+#include <QJsonDocument>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <utility>
@@ -45,7 +48,7 @@ void tick() {
 struct Calls {
     int reads = 0, writes = 0, observed = 0, stopped = 0, destroyed = 0;
     bool writable = true, transition = false, changed = true, failWrite = false;
-    bool finished = false;
+    bool finished = false, cloudSync = true;
     QString location;
     ReadingProgress current{"store-id", "chapter.xhtml#one", 1, 1, true};
 };
@@ -89,6 +92,9 @@ public:
     }
     void stopReading() override {
         ++calls.stopped;
+    }
+    void setCloudSync(bool enabled) override {
+        calls.cloudSync = enabled;
     }
 
 private:
@@ -308,6 +314,132 @@ int main(int argc, char **argv) {
         book.observeProgress();
         book.observeReading();
         require(calls.destroyed == 1 && !book.offerFinish(), "Released book accessed its bridge again");
+    }
+    {
+        // A sync server: another device's position is offered, never applied silently.
+        auto first = open();
+        require(first->go(first->pages() - 1), "Cannot reach the final page");
+        waitUntil([&] {
+            return !first->busy();
+        });
+        const auto farAnchor = first->state().value("position").toString();
+        require(first->go(0), "Cannot return to the first page");
+        waitUntil([&] {
+            return !first->busy();
+        });
+        const auto startAnchor = first->state().value("position").toString();
+        require(!farAnchor.isEmpty() && farAnchor != startAnchor, "The test book has no two positions to sync");
+        test::Server server;
+        QString remoteDevice = "OTHER";
+        server.respond = [&](const test::Request &request) {
+            if (request.method == "PUT")
+                return test::http(200, "{\"timestamp\":1700000100}");
+            if (request.path.endsWith("doc2"))
+                return test::http(404);
+            return test::http(200, QJsonDocument(qt::object({{"document", "doc"},
+                                                             {"progress", farAnchor},
+                                                             {"percentage", 0.9},
+                                                             {"device", "Phone"},
+                                                             {"device_id", remoteDevice},
+                                                             {"timestamp", qint64(1700000000)}}))
+                                       .toJson());
+        };
+        const auto puts = [&] {
+            int count = 0;
+            for (const auto &request : server.requests)
+                count += request.method == "PUT";
+            return count;
+        };
+        const auto configure = [&](bool replaceKoboSync) {
+            return kosync::parseConfig("{\"server\":\"" + server.url().toString().toUtf8() +
+                                           "\",\"username\":\"u\",\"password\":\"p\",\"timeout_seconds\":2,"
+                                           "\"replace_kobo_sync\":" +
+                                           (replaceKoboSync ? "true" : "false") + "}",
+                                       "THISDEVICE");
+        };
+        const auto hash = first->sourceHash();
+        {
+            auto sync = std::make_unique<kosync::Session>(configure(true), "doc", paths.kosyncUnsent());
+            auto *watched = sync.get();
+            ReadingBook book(std::move(first), paths.bookState("sync-id"), paths, "sync-id", hash, nullptr, {}, {});
+            book.attachKosync(std::move(sync));
+            waitUntil([&] {
+                return watched->settled();
+            });
+            book.pollProgress();
+            require(book.pendingProgress(), "Another device's position was not offered");
+            const auto offered = book.candidate();
+            QString xpointer;
+            double fraction = 0;
+            require(kosync::splitLocation(offered.location, &xpointer, &fraction) && xpointer == farAnchor &&
+                        fraction == 0.9,
+                    "The offered position is not the server's");
+            require(!book.writeNative({}, "no native mapping"), "A pending server position was saved over");
+            book.pushKosync();
+            tick();
+            require(puts() == 0, "A position was sent while another device's was waiting for a choice");
+            book.acknowledge(offered, false);
+            require(!book.pendingProgress(), "Keeping the local position left the choice pending");
+            book.pushKosync();
+            waitUntil([&] {
+                return puts() == 1;
+            });
+            const auto sent = QJsonDocument::fromJson(server.requests.last().body).object();
+            require(sent.value("progress").toString() == startAnchor && sent.value("document") == "doc" &&
+                        sent.value("device_id") == "THISDEVICE" && sent.value("percentage").toDouble() > 0 &&
+                        sent.value("percentage").toDouble() <= 1,
+                    "The position sent to the server is wrong");
+            QJsonObject snapshot;
+            require(book.checkpoint(&snapshot) && snapshot.contains("kosync_progress"),
+                    "The decided server record was not saved with the book");
+        }
+        {
+            // The same record is not offered again at the next opening.
+            auto second = open();
+            const auto secondHash = second->sourceHash();
+            auto sync = std::make_unique<kosync::Session>(configure(true), "doc", paths.kosyncUnsent());
+            auto *watched = sync.get();
+            ReadingBook book(std::move(second), paths.bookState("sync-id"), paths, "sync-id", secondHash, nullptr, {},
+                             {});
+            book.attachKosync(std::move(sync));
+            waitUntil([&] {
+                return watched->settled();
+            });
+            book.pollProgress();
+            require(!book.pendingProgress(), "A decided server record was offered again");
+        }
+        {
+            // A record this device wrote is not another device's position.
+            remoteDevice = "THISDEVICE";
+            auto third = open();
+            const auto thirdHash = third->sourceHash();
+            auto sync = std::make_unique<kosync::Session>(configure(true), "doc", paths.kosyncUnsent());
+            auto *watched = sync.get();
+            ReadingBook book(std::move(third), paths.bookState("own-id"), paths, "own-id", thirdHash, nullptr, {}, {});
+            book.attachKosync(std::move(sync));
+            waitUntil([&] {
+                return watched->settled();
+            });
+            book.pollProgress();
+            require(!book.pendingProgress(), "This device's own record was offered to it");
+        }
+        for (const bool replace : {true, false}) {
+            // With a sync server in charge, Nickel's own sync is not offered.
+            Calls calls;
+            auto fourth = open();
+            const auto fourthHash = fourth->sourceHash();
+            ReadingBook book(std::move(fourth), paths.bookState(replace ? "replace-id" : "keep-id"), paths, "store-id",
+                             fourthHash, std::make_unique<Bridge>(calls), calls.current, calls.current);
+            book.attachKosync(std::make_unique<kosync::Session>(configure(replace), "doc2", paths.kosyncUnsent()));
+            require(calls.cloudSync == !replace, "The platform's cloud sync was not switched with the server");
+            ++calls.current.modified;
+            calls.current.location = "chapter.xhtml#remote";
+            calls.changed = true;
+            book.pollProgress();
+            require(book.pendingProgress() == !replace,
+                    replace ? "Nickel's sync was offered although the server replaces it"
+                            : "Nickel's sync was lost without a sync server in charge");
+        }
     }
     bool drained = false;
     ReaderSession::drain([&] {

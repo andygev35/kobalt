@@ -1,5 +1,6 @@
 #include "engine_positions.h"
 #include "engine/crengine/reader_model.h"
+#include "reading/kosync_location.h"
 #include "support/strings.h"
 #include <lvdocview.h>
 #include <QRegularExpression>
@@ -175,9 +176,30 @@ bool nativeText(ldomDocument *doc, const QString &path, const QString &id, ldomN
 }
 class NickelPositionCodec {
 public:
+    static QString decodeKosync(const ReaderModel &model, const QString &location, QString *error);
     static QString decode(const ReaderModel &model, const QString &location, QString *error);
     static QString encode(const ReaderModel &model, QString *error);
 };
+// A sync server's position is already a CREngine XPointer, so it needs no
+// translation, only a check that this document can place it. When it cannot, as
+// after the book or the engine changed, the fraction of the book picks a page.
+QString NickelPositionCodec::decodeKosync(const ReaderModel &model, const QString &location, QString *error) {
+    QString xpointer;
+    double fraction = 0;
+    if (!kosync::splitLocation(location, &xpointer, &fraction)) {
+        if (error)
+            *error = strings::get("error.no_supported_native_reading_position");
+        return {};
+    }
+    if (!xpointer.isEmpty() && !model.engine_->getDocument()->createXPointer(cre(xpointer)).isNull())
+        return xpointer;
+    const int pages = model.pages();
+    const auto start =
+        pages > 0 && fraction > 0 ? model.pageStart(qBound(0, int(fraction * pages + 0.5) - 1, pages - 1)) : QString();
+    if (start.isEmpty() && error)
+        *error = strings::get("error.native_text_position_was_not_found");
+    return start;
+}
 QString NickelPositionCodec::decode(const ReaderModel &model, const QString &location, QString *error) {
     auto fail = [error](const QString &message) {
         if (error)
@@ -188,6 +210,8 @@ QString NickelPositionCodec::decode(const ReaderModel &model, const QString &loc
         error->clear();
     if (!model.engine_ || location.isEmpty() || location.size() > 8192)
         return fail(strings::get("error.no_supported_native_reading_position"));
+    if (kosync::isLocation(location))
+        return decodeKosync(model, location, error);
     const int hash = location.indexOf('#');
     const auto path = QUrl::fromPercentEncoding(location.left(hash < 0 ? location.size() : hash).toUtf8());
     QString id = hash < 0 ? QString() : location.mid(hash + 1);
@@ -358,6 +382,14 @@ QString NickelPositionCodec::encode(const ReaderModel &model, QString *error) {
 }
 PositionCodec positionCodec() {
     return {NickelPositionCodec::decode, NickelPositionCodec::encode, [](const QString &location) {
+                QString xpointer;
+                double fraction = 0;
+                if (kosync::splitLocation(location, &xpointer, &fraction)) {
+                    // The start of the DocFragment holding the XPointer is the start of its chapter.
+                    static const QRegularExpression fragment(QStringLiteral("^/body/DocFragment(\\[[0-9]+\\])?"));
+                    const auto match = fragment.match(xpointer);
+                    return match.hasMatch() ? kosync::makeLocation(match.captured(0), fraction) : QString();
+                }
                 return location.left(location.indexOf('#') < 0 ? location.size() : location.indexOf('#'));
             }};
 }

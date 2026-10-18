@@ -288,8 +288,9 @@ bool NativeProgress::write(const ReadingProgress &expected, const QString &posit
     *verified = actual;
     // Keep Nickel's eligibility, network and power policy. Its worker owns the
     // request after this object closes. This is not proof of server delivery.
+    // With a sync server standing in for Kobo Sync, the position is not queued.
     auto *sync = native.manager();
-    if (!timeOnly && native.syncEligible(sync, &volume))
+    if (cloudSync && !timeOnly && native.syncEligible(sync, &volume))
         native.sendBookmark(sync, &volume);
     return true;
 }

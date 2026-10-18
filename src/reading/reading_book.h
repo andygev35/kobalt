@@ -2,6 +2,7 @@
 #include "reading_pace.h"
 #include "reading_progress.h"
 #include "storage/reader_storage.h"
+#include "kosync_session.h"
 #include "reading_bridge.h"
 #include <QElapsedTimer>
 #include <QJsonObject>
@@ -53,14 +54,23 @@ public:
     void pollProgress();
     void invalidateProgress() {
         progressPoll.invalidate();
+        kosyncRefresh = true;
     }
+    // Uses a sync server for position, and fetches its record for this book. The
+    // server then stands in for Nickel's own sync: only its positions are offered
+    // as a choice, and Nickel's are not (see kosync::Config::replaceKoboSync).
+    void attachKosync(std::unique_ptr<kosync::Session> session);
+    // Sends the current position to the sync server. Call when reading stops, as on
+    // closing or sleep. It sends nothing while another device's position awaits a choice.
+    void pushKosync();
     ReadingProgress readProgress() const;
     void observeProgress();
     bool pendingProgress() const {
-        return reconciliation.pending();
+        return reconciliation.pending() || kosyncReconciliation.pending();
     }
+    // The sync server's position is offered first; Nickel's follows once it is decided.
     ReadingProgress candidate() const {
-        return reconciliation.candidate();
+        return kosyncReconciliation.pending() ? kosyncReconciliation.candidate() : reconciliation.candidate();
     }
     void acknowledge(const ReadingProgress &shown, bool moved);
     // False leaves a sync conflict pending for the window to resolve.
@@ -84,6 +94,15 @@ private:
     bool released = false;
     ReadingProgress baseline;
     ProgressReconciler reconciliation;
+    ProgressReconciler kosyncReconciliation;
+    std::unique_ptr<kosync::Session> syncServer;
+    bool kosyncRefresh = false;
+    bool replacesKoboSync() const {
+        return syncServer && syncServer->config().replaceKoboSync;
+    }
+    void observeNative(const ReadingProgress &incoming);
+    void pollKosync();
+    void observeKosync(kosync::Progress remote);
     QElapsedTimer progressPoll;
     QElapsedTimer activeReading;
     qint64 completedReadingMilliseconds = 0;

@@ -6,6 +6,7 @@
 #include "book_menu.h"
 #include "browser_handoff.h"
 #include "interfaces/reader_window.h"
+#include "reading/kosync.h"
 #include "reading/reading_book.h"
 #include "storage/reader_storage.h"
 #include "reading/reader_session.h"
@@ -44,6 +45,22 @@ using kobalt::storage::writeJson;
 namespace {
 QPointer<ReaderCoordinator> activeCoordinator;
 bool benchmarkTypographyEnabled = false;
+
+// Kosync is on only when kosync.json holds a usable login. A book whose file
+// cannot be read for its ID simply goes without it.
+std::unique_ptr<kobalt::kosync::Session> openKosync(const kobalt::storage::Paths &paths, const QString &bookFile) {
+    const auto config = kobalt::kosync::loadConfig(paths.kosyncConfig(), paths.kosyncDevice());
+    if (!config.error.isEmpty())
+        kobalt::diagnostic("kosync-config-invalid", {{"error", config.error}});
+    if (!config.usable())
+        return {};
+    const auto document = kobalt::kosync::partialMd5(bookFile);
+    if (document.isEmpty()) {
+        kobalt::diagnostic("kosync-document-id-failed");
+        return {};
+    }
+    return std::make_unique<kobalt::kosync::Session>(config, document, paths.kosyncUnsent());
+}
 }
 
 extern "C" __attribute__((visibility("default"))) int kobalt_benchmark_typography_v1(const char *contentId,
@@ -715,6 +732,7 @@ void ReaderCoordinator::showReader() {
     auto book = std::make_unique<kobalt::ReadingBook>(
         std::move(run.model), run.statePath, environment_.paths, run.identity, run.expectedHash,
         kobalt::nickel::makeReadingBridge(run.identity, std::move(run.nativeProgress)), run.baseline, run.diskBaseline);
+    book->attachKosync(openKosync(environment_.paths, run.filePath));
     auto services = readerHostServices();
     const auto suspended = services.suspended;
     services.suspended = [this, suspended] {

@@ -16,5 +16,8 @@ public:
                        ReadingProgress *verified, QString *error) = 0;
     virtual void observeReading(double percent, const QString &position) = 0;
     virtual void stopReading() = 0;
+    // Whether the platform may queue a saved position for its own cloud sync.
+    // A bridge without cloud sync ignores this.
+    virtual void setCloudSync(bool) {}
 };
 }

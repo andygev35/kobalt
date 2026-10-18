@@ -38,6 +38,8 @@ function(kobalt_reading_library name model publication layout_policy)
         "${KOBALT_COMPONENT_ROOT}/src/reading/reader_session.cpp"
         "${KOBALT_COMPONENT_ROOT}/src/reading/appearance_settings.cpp"
         "${KOBALT_COMPONENT_ROOT}/src/reading/bookmark_session.cpp"
+        "${KOBALT_COMPONENT_ROOT}/src/reading/kosync.cpp"
+        "${KOBALT_COMPONENT_ROOT}/src/reading/kosync_session.cpp"
         "${KOBALT_COMPONENT_ROOT}/src/reading/reading_book.cpp"
         "${KOBALT_COMPONENT_ROOT}/src/reading/reading_progress.cpp"
         "${KOBALT_COMPONENT_ROOT}/src/storage/reader_storage.cpp"

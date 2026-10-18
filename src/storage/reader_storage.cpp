@@ -26,6 +26,15 @@ QString Paths::layoutCache() const {
 QString Paths::documentCache() const {
     return child(directory, ".cache");
 }
+QString Paths::kosyncConfig() const {
+    return child(directory, "kosync.json");
+}
+QString Paths::kosyncDevice() const {
+    return child(directory, "kosync-device.json");
+}
+QString Paths::kosyncUnsent() const {
+    return child(directory, "kosync-unsent.json");
+}
 QString Paths::bookState(const QString &identity) const {
     return child(directory, bookPrefix +
                                 QString::fromLatin1(

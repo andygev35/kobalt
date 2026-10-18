@@ -16,6 +16,10 @@ struct Paths {
     // Parsed books, owned by CREngine. It deletes any other file it finds there.
     QString documentCache() const;
     QString bookState(const QString &identity) const;
+    // Sync server login, this device's ID there, and positions it has not delivered.
+    QString kosyncConfig() const;
+    QString kosyncDevice() const;
+    QString kosyncUnsent() const;
 };
 bool writeJson(const QString &path, const QJsonObject &object);
 

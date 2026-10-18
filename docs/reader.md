@@ -74,7 +74,10 @@ All files are in `.adds/kobalt/`.
 | `assets/` | Bundled fonts, hyphenation dictionaries and `manifest.json` |
 | `config.json` | `enabled`, the Open books in Kobalt choice |
 | `reader-settings.json` | Settings that apply to every book: display options, Bold Reading, default reading font and interface preferences |
-| `<hash>.json` | One file per book: saved position, typography, header, footer, clock, orientation, dictionary choice and the Nickel progress baseline |
+| `<hash>.json` | One file per book: saved position, typography, header, footer, clock, orientation, dictionary choice, the Nickel progress baseline and the sync server record you last decided on |
+| `kosync.json` | Optional KOReader sync server login, see KOReader sync server. You create it |
+| `kosync-device.json` | The ID that identifies this Kobo to the sync server. Kobalt creates it |
+| `kosync-unsent.json` | Positions the sync server has not received yet, at most 32 books |
 | `annotations/<key>/` | One folder per book with `bookmarks.json` and `book.json`, see Bookmarks |
 | `reopen-layout.json` | Up to 20 layout-check results, keyed by archive digest, at most 8 KiB |
 | `.cache/` | Parsed books and their pages, so a book that was opened before opens without parsing. At most 128 MiB; the oldest books are removed first. Kobalt deletes any other file in this folder |
@@ -135,6 +138,35 @@ Books downloaded through servers compatible with Kobo's built-in sync mechanism 
 At 90% or more on exit, or when you turn past the last page, Kobalt asks whether to mark the book finished. Like Nickel's reader, opening a finished book marks it as reading again.
 
 Kobalt also reports reading sessions and page turns to Nickel, so Nickel's reading time and last-read date update. On firmware 4, Kobalt accepts either the current reading-session functions or the older pair without a reader-state argument. It requires a complete pair with the same calling convention.
+
+### KOReader sync server
+
+Kobo's own sync does not cover sideloaded books. Kobalt can instead sync reading position through a KOReader sync server (kosync), such as `sync.koreader.rocks` or a self-hosted server, using the same protocol, document ID and position format as KOReader. Another device running KOReader, or any other kosync client, shares the position when it opens the same EPUB file.
+
+Create `.adds/kobalt/kosync.json` on the Kobo drive:
+
+```json
+{
+  "server": "http://192.168.1.10:8081",
+  "username": "andy",
+  "password": "your password",
+  "device_name": "Kobo Libra 2"
+}
+```
+
+`server` and `username` are required, with either `password` or `userkey`, the password's MD5 as KOReader stores it. A `password` is stored as written, so prefer `userkey` if other people can read the drive. A server without a scheme is treated as `https://`. Optional entries are `enabled` (`false` switches kosync off without deleting the login), `timeout_seconds` (1 to 60, default 8) and `replace_kobo_sync` (default `true`, see below). Kosync is off while the file is missing, disabled or incomplete. Opening a book logs `kosync-config-invalid` in the event log when the file has a problem.
+
+Kobalt identifies a book by KOReader's default Binary method: the MD5 of up to 1024 bytes at each of 12 offsets in the EPUB file, from the start up to 1 GiB. Two devices match only if their files have identical bytes. Re-exporting or changing a book changes its ID. KOReader's Filename method is not supported, so leave KOReader on Binary.
+
+When a book opens, Kobalt asks the server for its position in the background. The book opens where you left off here. If another device is somewhere else, the same choice used for Nickel sync appears: Keep reading here or Go to synced position. Kobalt never jumps without asking, and it does not send anything while that choice is open, so the other device's position cannot be overwritten before you decide. A record this device wrote itself, or one you already decided on, is not offered again. Kobalt asks again after the device wakes.
+
+Kobalt sends the position when you close the book and before sleep. The request is not waited on, so closing is not delayed. It outlives the reader. Pages turned in between are not sent. If the server cannot be reached, for example because Wi-Fi is off, Kobalt keeps the position in `kosync-unsent.json`. At the next opening, an undelivered position newer than the server's record is sent instead of offering the older record. Kobalt does not switch Wi-Fi on. A device that sleeps right after closing may finish the request when it wakes.
+
+The position is a CREngine XPointer and the fraction of the book through the page, as KOReader sends them. If the XPointer does not exist in this copy of the book, Kobalt goes to the page at that fraction. KOReader and Kobalt may lay a book out differently, so the same XPointer can fall on different pages. A book that KOReader has stored with a different document model version may not resolve exactly.
+
+With `replace_kobo_sync` on, the server stands in for Nickel's sync. Positions that Nickel's sync brings are not offered, and Kobalt does not queue saved positions for Kobo's cloud. Kobalt still writes the position, percentage and last-read time to Nickel's own database, so Home and the sleep screen stay current. Set it to `false` to keep both.
+
+Kosync requests and failures appear in the event log as `kosync-pull` and `kosync-push` with a numeric status: 0 success, 1 book unknown to the server, 2 login refused, 3 server unreachable, 4 other error. After a refused login, Kobalt stops contacting the server until the next opening. Kosync works on Kobo only. The Android and macOS builds do not use it. Plain `http://` servers on your network work. Whether `https://` servers work depends on the firmware's TLS support, which has not been verified on devices.
 
 ## Reading interface
 

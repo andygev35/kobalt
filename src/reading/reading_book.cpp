@@ -4,6 +4,7 @@
 #include "reader_session.h"
 #include "storage/reader_storage.h"
 #include "support/diagnostics.h"
+#include <QDateTime>
 
 namespace kobalt {
 ReadingBook::ReadingBook(std::unique_ptr<ReaderSession> session, QString statePath, storage::Paths paths,
@@ -11,15 +12,21 @@ ReadingBook::ReadingBook(std::unique_ptr<ReaderSession> session, QString statePa
                          ReadingProgress baseline, ReadingProgress diskBaseline)
     : model(std::move(session)), statePath(std::move(statePath)), identity_(std::move(identity)),
       paths_(std::move(paths)), digest(std::move(digest)), bridge(std::move(bridge)), baseline(std::move(baseline)),
-      reconciliation(std::move(diskBaseline)) {
+      reconciliation(std::move(diskBaseline)), kosyncReconciliation(ReadingProgress{identity_, {}, 0, 0, true}) {
     const auto saved = storage::readJson(this->statePath);
     const auto preferences = appearance::readerPreferences(
         storage::readJson(paths_.preferences()), saved.value("book").toString() == identity_ ? saved : QJsonObject());
     for (const auto *key : appearance::layoutKeys)
         if (preferences.contains(key))
             layoutPreferences_[key] = preferences.value(key);
-    if (saved.value("book").toString() == identity_)
+    if (saved.value("book").toString() == identity_) {
         dictionaryChoice_ = saved.value("dictionary_id").toString();
+        // The server record already decided on. Without it, an unchanged record
+        // would be offered again at every opening.
+        const auto seen = ReadingProgress::fromJson(saved.value("kosync_progress").toObject());
+        if (seen.valid && seen.book == identity_)
+            kosyncReconciliation = ProgressReconciler(seen);
+    }
     // Qt 5.2 leaves a default-constructed QElapsedTimer uninitialized, so
     // isValid() is not reliable until the timer is invalidated or started.
     progressPoll.invalidate();
@@ -84,28 +91,102 @@ void ReadingBook::markFinished() {
 ReadingProgress ReadingBook::readProgress() const {
     return bridge ? bridge->read() : ReadingProgress{};
 }
+void ReadingBook::observeNative(const ReadingProgress &incoming) {
+    reconciliation.observe(incoming);
+    // With a sync server in charge, a position Nickel's own sync brought is not
+    // offered. Accepting it as seen lets the next save replace it.
+    if (replacesKoboSync() && reconciliation.pending())
+        reconciliation.acknowledge(reconciliation.candidate());
+}
 void ReadingBook::observeProgress() {
+    pollKosync();
     if (bridge)
-        reconciliation.observe(bridge->read());
+        observeNative(bridge->read());
+}
+void ReadingBook::attachKosync(std::unique_ptr<kosync::Session> session) {
+    syncServer = std::move(session);
+    if (!syncServer)
+        return;
+    if (bridge)
+        bridge->setCloudSync(!syncServer->config().replaceKoboSync);
+    syncServer->pull();
+}
+void ReadingBook::pollKosync() {
+    if (!syncServer)
+        return;
+    // A wake can mean another device moved on. Ask again, at most once at a time.
+    if (kosyncRefresh && !syncServer->pulling()) {
+        kosyncRefresh = false;
+        syncServer->pull();
+    }
+    kosync::Progress remote;
+    if (syncServer->takeRemote(&remote))
+        observeKosync(std::move(remote));
+}
+void ReadingBook::observeKosync(kosync::Progress remote) {
+    // A server without timestamps still has to order its answers.
+    if (remote.timestamp <= 0)
+        remote.timestamp = QDateTime::currentMSecsSinceEpoch() / 1000;
+    const auto shown = kosync::toReadingProgress(identity_, remote);
+    const auto anchor = model->state().value("position").toString();
+    switch (kosync::classify(remote, syncServer->config().deviceId, anchor, syncServer->unsentAt())) {
+    case kosync::Verdict::Ignore:
+        return;
+    case kosync::Verdict::Prompt:
+        kosyncReconciliation.observe(shown);
+        return;
+    case kosync::Verdict::KeepLocal:
+        kosyncReconciliation.observe(shown);
+        kosyncReconciliation.acknowledge(shown);
+        // This device read further than the server knows. Say so now, not at exit.
+        pushKosync();
+        return;
+    case kosync::Verdict::Acknowledge:
+        kosyncReconciliation.observe(shown);
+        kosyncReconciliation.acknowledge(shown);
+        return;
+    }
+}
+void ReadingBook::pushKosync() {
+    if (!syncServer)
+        return;
+    pollKosync();
+    if (kosyncReconciliation.pending() || model->image().isNull() || !model->error().isEmpty())
+        return;
+    const auto anchor = model->state().value("position").toString();
+    // The same measure KOReader sends: the fraction of the book through the current page.
+    const double percentage = qBound(0.0, double(model->page() + 1) / qMax(1, model->pages()), 1.0);
+    syncServer->push(anchor, percentage);
 }
 void ReadingBook::pollProgress() {
+    pollKosync();
     if (!bridge)
         return;
     // Nickel's saved position changes after sync, account updates, USB and
     // wake. Check then, and otherwise once a minute.
     if (!bridge->takeChange() && progressPoll.isValid() && progressPoll.elapsed() < 60000)
         return;
-    observeProgress();
+    observeNative(bridge->read());
     progressPoll.restart();
     if (!reconciliation.pending() && reconciliation.baseline().valid)
         baseline = reconciliation.baseline();
 }
 void ReadingBook::acknowledge(const ReadingProgress &shown, bool moved) {
+    if (kosync::isLocation(shown.location)) {
+        kosyncReconciliation.acknowledge(shown);
+        acceptedFinishedAnchor.clear();
+        return;
+    }
     reconciliation.acknowledge(shown);
     baseline = reconciliation.baseline();
     acceptedFinishedAnchor = moved && shown.status == 2 ? model->state().value("position").toString() : QString();
 }
 bool ReadingBook::writeNative(const QString &location, const QString &mappingError) {
+    // Another device's position waits for a choice. Saving over it first would
+    // lose the one place the reader has not yet been asked about.
+    pollKosync();
+    if (kosyncReconciliation.pending())
+        return false;
     if (!bridge && !released) {
         nativeWriteback = "local-only";
         nativeWritebackError.clear();
@@ -121,7 +202,7 @@ bool ReadingBook::writeNative(const QString &location, const QString &mappingErr
     nativeWriteback = "local-only";
     if (error.isEmpty() && canWriteNative()) {
         const auto current = bridge->read(&error);
-        reconciliation.observe(current);
+        observeNative(current);
         if (reconciliation.pending())
             return false;
         if (reconciliation.mayWrite(current)) {
@@ -183,6 +264,8 @@ bool ReadingBook::checkpoint(QJsonObject *snapshot) {
     state["schema"] = 1;
     state["nickel_progress"] = baseline.json();
     state["finished_position"] = acceptedFinishedAnchor;
+    if (syncServer && kosyncReconciliation.baseline().modified > 0)
+        state["kosync_progress"] = kosyncReconciliation.baseline().json();
     state["native_writeback"] = nativeWriteback;
     state["sync_pending"] = reconciliation.pending();
     state["native_writeback_error"] = nativeWritebackError;

@@ -115,6 +115,8 @@ void Reader::sleepReader() {
     setProperty("reader_animation_direction", 0);
     appearanceEdit.clearContinuation();
     saveNativeProgress();
+    // The device may power off while asleep. Tell the sync server now.
+    book->pushKosync();
     checkpoint();
     closeSearch();
     dismissLookup();
@@ -1401,6 +1403,8 @@ void Reader::finishExit() {
             showProgressChoice();
             return;
         }
+        // The request outlives this window, so closing does not wait for the network.
+        book->pushKosync();
         save(true);
         closing = true;
         close();

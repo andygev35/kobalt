@@ -17,6 +17,11 @@ public:
     bool deviceTransition() const {
         return transitioning;
     }
+    // False keeps a saved position out of Nickel's own sync queue. The position
+    // is still written to its database.
+    void setCloudSync(bool enabled) {
+        cloudSync = enabled;
+    }
     // True once after Nickel may have changed the saved progress: after sync,
     // an account update or USB.
     bool takeChange() {
@@ -46,7 +51,7 @@ private slots:
 private:
     QString book;
     quint64 connectionId;
-    bool transitioning = false, processing = false, changed = true;
+    bool transitioning = false, processing = false, changed = true, cloudSync = true;
     QVariantMap persisted(QString *error) const;
 };
 }

@@ -105,6 +105,9 @@ kobalt_check(usb-removal SOURCES tests/model/usb_removal.cpp LIBRARIES Qt6::Core
 kobalt_check(nickel-session-calls SOURCES tests/model/nickel_session_calls.cpp LIBRARIES Qt6::Core)
 
 kobalt_check(progress SOURCES tests/model/reading_progress.cpp src/reading/reading_progress.cpp LIBRARIES Qt6::Core)
+kobalt_check(kosync SOURCES tests/model/kosync.cpp src/reading/kosync.cpp src/reading/kosync_session.cpp
+    src/reading/reading_progress.cpp src/storage/reader_storage.cpp src/support/diagnostics.cpp
+    LIBRARIES Qt6::Network Threads::Threads)
 kobalt_check(storage-assets SOURCES tests/model/storage_assets.cpp src/assets/assets.cpp src/storage/reader_storage.cpp
     LIBRARIES Qt6::Core)
 kobalt_check(layout-compatibility SOURCES tests/model/layout_compatibility.cpp src/publication/layout_compatibility.cpp

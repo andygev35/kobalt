@@ -34,6 +34,9 @@ public:
     void stopReading() override {
         reading_.stop();
     }
+    void setCloudSync(bool enabled) override {
+        progress_->setCloudSync(enabled);
+    }
 
 private:
     std::unique_ptr<NativeProgress> progress_;
