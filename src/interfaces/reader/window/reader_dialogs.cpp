@@ -146,7 +146,7 @@ bool Reader::progressBlocked() const {
            lightPopup->isVisible() || model->busy() || (chapterGraph->isVisible() && !statsPinned()) ||
            dictionaryPanel->isVisible() || searchPanel->isVisible() || linksActive() || lookupPending ||
            appearanceEdit.panelOpen() || appearanceEdit.applying() || general->isVisible() || choices->isVisible() ||
-           acknowledgments->isVisible();
+           acknowledgments->isVisible() || kosyncPanel->isVisible();
 }
 
 void Reader::dismissProgressChoice() {

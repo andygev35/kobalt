@@ -4,6 +4,8 @@
 
 - Added KOReader sync server (kosync) support on Kobo. Reading position saves to the server when you close a book or the device sleeps, and another device's position is offered when you open it, with the usual Keep reading here or Go to synced position choice. It uses KOReader's document ID and position format, so books sync with KOReader on other devices. Create `.adds/kobalt/kosync.json` with the server and login to turn it on. By default it replaces Kobo's sync for position, which does not cover sideloaded books anyway.
 
+- Added a KOReader sync server screen to Settings > Advanced on Kobo. Enter the server address, username and password with the on-screen keyboard, then test the connection to see whether the server accepts the login. Save checks the login first and stores it in `kosync.json`, so you no longer have to create that file by hand.
+
 ## v1.0-beta.3
 
 ### What's changed

@@ -145,6 +145,13 @@ SettingsPanel::SettingsPanel(QWidget *parent, const SettingsPanelInputs &inputs)
     heavierTextOption = check(advancedPage, "rrHeavierText", strings::get("reader.heavier_interface_text"),
                               strings::get("settings.heavier_interface_text_description"));
     advancedRows->addWidget(heavierTextOption);
+    if (inputs.kosyncAvailable) {
+        openKosync =
+            ui::makeCaptionButton(advancedPage, advancedRows, "rrOpenKosync", strings::get("kosync_panel.row"), [] {});
+        openKosync->setChevron(true);
+        openKosync->setRule(Qt::BottomEdge);
+        readerStyle(openKosync, ui::styles::font(c::labelText));
+    }
     auto *resetRow = kobalt::ui::horizontalRow();
     advancedRows->addLayout(resetRow);
     resetRow->addStretch(1);

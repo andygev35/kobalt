@@ -20,5 +20,6 @@ set(KOBALT_READER_INTERFACE_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/panels/light_panel.cpp
     ${CMAKE_CURRENT_LIST_DIR}/panels/search_panel.cpp
     ${CMAKE_CURRENT_LIST_DIR}/settings/acknowledgments.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/settings/kosync_panel.cpp
     ${CMAKE_CURRENT_LIST_DIR}/views/navigation.cpp
 )

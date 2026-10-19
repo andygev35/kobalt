@@ -803,6 +803,7 @@ void Reader::buildSettings() {
     settingsInputs.animationsSupported = services.animationsAvailable();
     settingsInputs.lightSupported = services.lightAvailable();
     settingsInputs.warmthSupported = warmthSupported;
+    settingsInputs.kosyncAvailable = services.kosync.complete();
 #ifndef KOBALT_READER_HARDWARE
     settingsInputs.debugProgressAvailable = true;
 #endif
@@ -894,6 +895,14 @@ void Reader::buildSettings() {
         for (auto *widget : acknowledgments->findChildren<QWidget *>())
             textRefresh(widget);
     });
+    if (settings->openKosync) {
+        connect(settings->openKosync, &QPushButton::clicked, this, [this] {
+            kosyncPanel->open();
+            for (auto *widget : kosyncPanel->findChildren<QWidget *>())
+                textRefresh(widget);
+            textRefresh(kosyncPanel);
+        });
+    }
     connect(settings->confirmDefaults, &QPushButton::clicked, this, [this] {
         restoringDefaults = true;
         clockOption->setChecked(true);
@@ -928,6 +937,16 @@ void Reader::buildNotices() {
         syncNavigation();
     };
     acknowledgments->hide();
+    kosyncPanel = new kobalt::KosyncPanel(this, services.keyboard);
+    if (services.kosync.complete())
+        kosyncPanel->setService(services.kosync);
+    kosyncPanel->dismissed = [this] {
+        kosyncPanel->stop();
+        kosyncPanel->hide();
+        general->raise();
+        syncNavigation();
+    };
+    kosyncPanel->hide();
     busyNotice = new kobalt::ui::ModalOverlay(this);
     busyNotice->card()->message(strings::get("reader.applying_appearance_changes"), "rrUpdatingText");
     // Create the bar before the initial refresh attributes are assigned.

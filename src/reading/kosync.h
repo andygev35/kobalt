@@ -36,6 +36,24 @@ struct Config {
 Config loadConfig(const QString &configPath, const QString &devicePath);
 Config parseConfig(const QByteArray &json, QString deviceId);
 
+// The login as the settings screen edits it. The password is never read back:
+// an empty one on save keeps whatever kosync.json already holds.
+struct Login {
+    QString server, username, password;
+};
+// What kosync.json holds, read leniently for the settings screen.
+struct StoredLogin {
+    QString server, username;
+    bool hasPassword = false, enabled = true;
+};
+StoredLogin readLogin(const QString &configPath);
+// Writes the login and turns kosync on, keeping every other key in the file.
+// Returns false with `error` set when the login is unusable or cannot be saved.
+bool writeLogin(const QString &configPath, const Login &login, QString *error);
+// A Config for a login that is not yet saved. An empty password falls back to
+// the one in the file at `configPath`, if there is one.
+Config configFor(const Login &login, const QString &configPath = QString());
+
 // KOReader's default "Binary" document ID: the MD5 of up to 1024 bytes at each of
 // the offsets 0, 1 KiB, 4 KiB, 16 KiB ... 1 GiB, stopping at the end of the file.
 // Empty when the file cannot be read.
@@ -78,6 +96,11 @@ struct PullResult {
     QString error;
     int http = 0;
 };
+struct AuthResult {
+    Status status = Status::Unavailable;
+    int http = 0;
+    QString error;
+};
 struct PushResult {
     Status status = Status::Unavailable;
     qint64 timestamp = 0;
@@ -97,6 +120,8 @@ public:
     }
     void pull(const QString &document, std::function<void(PullResult)> done) const;
     void push(const Progress &progress, std::function<void(PushResult)> done) const;
+    // Asks the server whether the username and key are accepted.
+    void authenticate(std::function<void(AuthResult)> done) const;
     // The request without a body, for inspection.
     QNetworkRequest request(const QString &path) const;
 

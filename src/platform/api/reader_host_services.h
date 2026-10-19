@@ -1,6 +1,7 @@
 #pragma once
 #include "dictionary_service.h"
 #include "keyboard_controller.h"
+#include "kosync_settings.h"
 #include "light_controls.h"
 #include "window_presentation.h"
 #include <QFont>
@@ -48,6 +49,8 @@ struct ReaderHostServices {
     std::function<std::unique_ptr<LightControls>(QWidget *)> light;
     std::function<std::unique_ptr<DictionaryService>()> dictionary;
     KeyboardFactory keyboard;
+    // Optional. Empty on hosts without a kosync login to edit.
+    KosyncSettingsService kosync;
     PresentationFactory presentation;
     // Empty in hardware builds. Keep the value layout independent of the
     // diagnostic macro used by the constructing and consuming targets.

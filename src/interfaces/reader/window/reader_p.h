@@ -16,6 +16,7 @@
 #include "interfaces/reader/panels/choice_screen.h"
 #include "interfaces/reader/panels/chapter_graph.h"
 #include "interfaces/reader/settings/acknowledgments.h"
+#include "interfaces/reader/settings/kosync_panel.h"
 #include "interfaces/reader/panels/light_panel.h"
 #include "interfaces/reader/panels/bookmark_list.h"
 #include "interfaces/reader/panels/dictionary_panel.h"
@@ -162,6 +163,7 @@ private:
     kobalt::ChapterGraph *chapterGraph = nullptr;
     bool pinStats = false, pinnedStatsOpen = false;
     kobalt::Acknowledgments *acknowledgments;
+    kobalt::KosyncPanel *kosyncPanel = nullptr;
     QStackedWidget *panels;
     QLabel *progressLabel, *previewLabel;
     QPushButton *previousPage, *nextPage, *resetDefaults, *chapterButton;

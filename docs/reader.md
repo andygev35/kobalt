@@ -143,7 +143,7 @@ Kobalt also reports reading sessions and page turns to Nickel, so Nickel's readi
 
 Kobo's own sync does not cover sideloaded books. Kobalt can instead sync reading position through a KOReader sync server (kosync), such as `sync.koreader.rocks` or a self-hosted server, using the same protocol, document ID and position format as KOReader. Another device running KOReader, or any other kosync client, shares the position when it opens the same EPUB file.
 
-Create `.adds/kobalt/kosync.json` on the Kobo drive:
+Set the login in Settings > Advanced > KOReader sync server, or create `.adds/kobalt/kosync.json` on the Kobo drive:
 
 ```json
 {
@@ -153,6 +153,8 @@ Create `.adds/kobalt/kosync.json` on the Kobo drive:
   "device_name": "Kobo Libra 2"
 }
 ```
+
+The KOReader sync server screen in Settings > Advanced edits the same file. It lists the server address, username and password. Tap a row to type its value with the on-screen keyboard; the password shows only as dots and is never read back, so editing it always starts empty. Test connection asks the server whether it accepts the login and reports one of: connected, refused username or password, an address that is not a KOReader sync server, no answer from the server (with the network error when there is one), or a login that cannot be used as typed. Save runs the same test first and writes the login only when the server accepts it. Saving keeps every other key in `kosync.json`, such as `device_name` and `timeout_seconds`, keeps the stored password when the field is left empty, and turns kosync on. A saved login applies from the next book you open. A damaged `kosync.json` is left unchanged, and the screen says it could not be saved. Editing a value while a test runs discards that test's reply. The row appears only on Kobo.
 
 `server` and `username` are required, with either `password` or `userkey`, the password's MD5 as KOReader stores it. A `password` is stored as written, so prefer `userkey` if other people can read the drive. A server without a scheme is treated as `https://`. Optional entries are `enabled` (`false` switches kosync off without deleting the login), `timeout_seconds` (1 to 60, default 8) and `replace_kobo_sync` (default `true`, see below). Kosync is off while the file is missing, disabled or incomplete. Opening a book logs `kosync-config-invalid` in the event log when the file has a problem.
 
@@ -237,7 +239,7 @@ The Light tab is shown only when the host can control the frontlight. Android ha
 Settings has the following tabs:
 
 - Display: dark mode, Bold Reading, book progress bar, page animations and how often the screen refreshes. Page animations apply only while reading in Kobalt; a handoff to Nickel uses Nickel's own page turns.
-- Advanced: smooth images, link indicator, edge swipes for the frontlight, More readable interface text and Restore appearance defaults.
+- Advanced: smooth images, link indicator, edge swipes for the frontlight, More readable interface text, KOReader sync server on Kobo and Restore appearance defaults.
 - Dictionaries: browse, install and remove downloaded dictionaries. This tab is available on Android and in the desktop app's Fill window mode.
 - Stats: Compact chapter graphs, off by default, and Always show statistics, off by default. With it on, Stats has no tab in the bottom bar. It opens above the tabs whenever the reading controls open. It hides while Settings is open, and while another panel overlaps it, such as Text, Layout, Light or Chapters.
 - About: version and Qt build, such as "Version 1.0-beta.1 (Qt5)", the short commit of the sources, with `*` when they had uncommitted changes, the description "An experimental alternative EPUB reader." and acknowledgments.

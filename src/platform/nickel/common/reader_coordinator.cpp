@@ -61,6 +61,59 @@ std::unique_ptr<kobalt::kosync::Session> openKosync(const kobalt::storage::Paths
     }
     return std::make_unique<kobalt::kosync::Session>(config, document, paths.kosyncUnsent());
 }
+
+// The settings screen edits the same kosync.json that openKosync reads, so a
+// saved login applies from the next book that opens.
+kobalt::KosyncSettingsService kosyncSettings(const kobalt::storage::Paths &paths) {
+    using Service = kobalt::KosyncSettingsService;
+    namespace kosync = kobalt::kosync;
+    Service service;
+    const auto path = paths.kosyncConfig();
+    service.load = [path] {
+        const auto stored = kosync::readLogin(path);
+        Service::Stored result;
+        result.server = stored.server;
+        result.username = stored.username;
+        result.hasPassword = stored.hasPassword;
+        return result;
+    };
+    service.save = [path](const QString &server, const QString &username, const QString &password, QString *error) {
+        return kosync::writeLogin(path, {server, username, password}, error);
+    };
+    service.test = [path](const QString &server, const QString &username, const QString &password,
+                          std::function<void(Service::TestResult)> done) {
+        const auto config = kosync::configFor({server, username, password}, path);
+        if (!config.error.isEmpty()) {
+            done({Service::Outcome::Invalid, config.error});
+            return;
+        }
+        kosync::Client(config).authenticate([done](kosync::AuthResult answer) {
+            Service::TestResult result;
+            result.detail = answer.error;
+            switch (answer.status) {
+            case kosync::Status::Ok:
+                result.outcome = Service::Outcome::Success;
+                break;
+            case kosync::Status::Unauthorized:
+                result.outcome = Service::Outcome::BadLogin;
+                break;
+            case kosync::Status::NotFound:
+                result.outcome = Service::Outcome::NotKosync;
+                break;
+            case kosync::Status::Unavailable:
+                result.outcome = Service::Outcome::Unreachable;
+                break;
+            case kosync::Status::Invalid:
+                result.outcome = Service::Outcome::Rejected;
+                break;
+            }
+            kobalt::diagnostic("kosync-test",
+                               {{"status", int(answer.status)}, {"http", answer.http}, {"error", answer.error}});
+            done(std::move(result));
+        });
+    };
+    return service;
+}
 }
 
 extern "C" __attribute__((visibility("default"))) int kobalt_benchmark_typography_v1(const char *contentId,
@@ -734,6 +787,7 @@ void ReaderCoordinator::showReader() {
         kobalt::nickel::makeReadingBridge(run.identity, std::move(run.nativeProgress)), run.baseline, run.diskBaseline);
     book->attachKosync(openKosync(environment_.paths, run.filePath));
     auto services = readerHostServices();
+    services.kosync = kosyncSettings(environment_.paths);
     const auto suspended = services.suspended;
     services.suspended = [this, suspended] {
         return usbDialog_.active() || suspended();

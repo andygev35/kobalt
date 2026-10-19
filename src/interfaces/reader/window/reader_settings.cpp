@@ -64,6 +64,8 @@ void Reader::openSettings() {
     chapterGraph->hide();
     bookmarkList->hide();
     acknowledgments->hide();
+    kosyncPanel->stop();
+    kosyncPanel->hide();
     appearanceEdit.clearContinuation();
     restoringDefaults = false;
     settingsPages->setCurrentIndex(DisplaySettings);

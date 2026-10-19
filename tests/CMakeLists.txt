@@ -199,6 +199,9 @@ kobalt_widget_test(acknowledgments-components SOURCES "${KOBALT_TESTS}/model/ack
 qt_add_resources(acknowledgments-components-test component_notices PREFIX "/kobalt"
     BASE "${KOBALT_ROOT}/resources" FILES "${KOBALT_ROOT}/resources/acknowledgments.json" ${notices})
 
+kobalt_widget_test(kosync-panel SOURCES "${KOBALT_TESTS}/model/kosync_panel.cpp"
+    "${KOBALT_ROOT}/src/interfaces/reader/settings/kosync_panel.cpp" LIBRARIES reader-widgets)
+
 kobalt_widget_test(reader-canvas-input SOURCES "${KOBALT_TESTS}/native-ui/reader_canvas_test.cpp" LIBRARIES Qt6::Widgets)
 kobalt_widget_test(test-shards SOURCES "${KOBALT_TESTS}/native-ui/test_shards_test.cpp" LIBRARIES Qt6::Core)
 

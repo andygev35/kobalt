@@ -24,6 +24,7 @@ struct SettingsPanelInputs {
     bool animationsSupported = false, lightSupported = false, warmthSupported = false;
     bool debugProgressAvailable = false, desktopUi = false;
     bool downloadableDictionaries = true;
+    bool kosyncAvailable = false;
 };
 // Qt parents own every widget. Reader installs policy callbacks after construction.
 class SettingsPanel final : public ui::Panel {
@@ -43,7 +44,7 @@ public:
                         *heavierTextOption = nullptr;
     ui::DescribedOption *linkIndicatorOption = nullptr, *hideNonlinearOption = nullptr;
     ui::DescribedOption *bionicOption = nullptr;
-    ui::CaptionButton *refreshButton = nullptr, *resetDefaults = nullptr;
+    ui::CaptionButton *refreshButton = nullptr, *resetDefaults = nullptr, *openKosync = nullptr;
     QPushButton *keepDefaults = nullptr, *confirmDefaults = nullptr;
     QPushButton *openAcknowledgments = nullptr, *debugProgress = nullptr;
     DictionariesPage *dictionaries = nullptr;

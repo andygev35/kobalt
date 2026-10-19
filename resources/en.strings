@@ -236,6 +236,30 @@
 /* image */
 "image.unavailable" = "Image could not be loaded";
 
+/* kosync_panel */
+"kosync_panel.title" = "KOReader sync";
+"kosync_panel.row" = "KOReader sync server";
+"kosync_panel.server" = "Server";
+"kosync_panel.server_hint" = "https://sync.example.com";
+"kosync_panel.username" = "Username";
+"kosync_panel.password" = "Password";
+"kosync_panel.password_kept" = "Saved. Leave blank to keep it.";
+"kosync_panel.test" = "Test connection";
+"kosync_panel.save" = "Save";
+"kosync_panel.testing" = "Testing the connection…";
+"kosync_panel.intro" = "Sync reading progress with other KOReader devices. Test the login before you save it.";
+"kosync_panel.success" = "Connected. The server accepted this login.";
+"kosync_panel.bad_login" = "The server refused this username or password.";
+"kosync_panel.not_kosync" = "That address answered, but not as a KOReader sync server. Check the address.";
+"kosync_panel.unreachable" = "Could not reach the server. Check the address and that Wi-Fi is on.";
+/* Arguments: %1 = the network error */
+"kosync_panel.unreachable_detail" = "Could not reach the server: %1";
+"kosync_panel.rejected" = "The server did not accept the request.";
+"kosync_panel.invalid" = "Enter the server address, username and password.";
+"kosync_panel.saved" = "Connected and saved. It applies the next time you open a book.";
+"kosync_panel.not_set" = "Not set";
+"kosync_panel.save_failed" = "The login could not be saved.";
+
 /* light_panel */
 "light_panel.automatic_brightness" = "Automatic brightness";
 "light_panel.automatic_brightness_description" = "Uses the ambient light sensor. Manual adjustments turn this off.";

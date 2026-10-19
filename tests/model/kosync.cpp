@@ -5,9 +5,11 @@
 #include "storage/reader_storage.h"
 #include "support/qt_compat.h"
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
@@ -15,6 +17,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <optional>
 
 using namespace kobalt;
 using test::http;
@@ -348,6 +351,96 @@ int main(int argc, char **argv) {
         session.pull();
         pause(50);
         require(server.requests.size() == count, "A refused login still fetched");
+    }
+    {
+        // The settings screen reads and writes the login in kosync.json.
+        const auto loginPath = dir.filePath("login/kosync.json");
+        QDir().mkpath(dir.filePath("login"));
+        require(!kosync::readLogin(loginPath).hasPassword && kosync::readLogin(loginPath).server.isEmpty(),
+                "A missing file should read as empty");
+        QString error;
+        require(!kosync::writeLogin(loginPath, {"", "andy", "pw"}, &error) && !error.isEmpty(),
+                "A login without a server was saved");
+        require(!kosync::writeLogin(loginPath, {"ftp://x.example.org", "andy", "pw"}, &error),
+                "A non-HTTP server was saved");
+        require(!kosync::writeLogin(loginPath, {"https://x.example.org", "andy", ""}, &error),
+                "A first login without a password was saved");
+        require(!QFileInfo::exists(loginPath), "A refused login created a file");
+        require(kosync::writeLogin(loginPath, {"sync.example.org", " andy", "pw"}, &error), "A good login was refused");
+        auto stored = storage::readJson(loginPath);
+        require(stored.value("server") == "https://sync.example.org" && stored.value("password") == "pw" &&
+                    stored.value("enabled").toBool(),
+                "The login was not written as the reader expects");
+        // Other keys survive, an empty password keeps the old one, and a new one replaces a userkey.
+        stored.insert("device_name", "Kobo");
+        stored.insert("timeout_seconds", 20);
+        storage::writeJson(loginPath, stored);
+        require(kosync::writeLogin(loginPath, {"https://b.example.org", "andy", ""}, &error),
+                "Keeping the password failed");
+        stored = storage::readJson(loginPath);
+        require(stored.value("server") == "https://b.example.org" && stored.value("password") == "pw" &&
+                    stored.value("device_name") == "Kobo" && stored.value("timeout_seconds") == 20,
+                "Saving changed keys it does not own");
+        stored.remove("password");
+        stored.insert("userkey", "abc");
+        storage::writeJson(loginPath, stored);
+        require(kosync::readLogin(loginPath).hasPassword, "A userkey should count as a stored password");
+        require(kosync::writeLogin(loginPath, {"https://b.example.org", "andy", "new"}, &error), "Replacing failed");
+        stored = storage::readJson(loginPath);
+        require(stored.value("password") == "new" && !stored.contains("userkey"),
+                "A new password left a stale userkey");
+        // A damaged file is not overwritten.
+        QFile damaged(loginPath);
+        damaged.open(QIODevice::WriteOnly);
+        damaged.write("not json");
+        damaged.close();
+        require(!kosync::writeLogin(loginPath, {"https://b.example.org", "andy", "x"}, &error),
+                "A damaged file was replaced");
+        // An empty password in a test falls back to the saved one.
+        storage::writeJson(loginPath, qt::object({{"server", "https://a.example.org"}, {"password", "saved"}}));
+        const auto fallback = kosync::configFor({"https://b.example.org", "andy", ""}, loginPath);
+        require(fallback.error.isEmpty() &&
+                    fallback.userKey ==
+                        QString::fromLatin1(QCryptographicHash::hash("saved", QCryptographicHash::Md5).toHex()),
+                "A saved password was not used for an unsaved test");
+    }
+    {
+        // The login check: 200 accepts, 401 refuses, 404 is not a kosync server, silence is unreachable.
+        Server auth;
+        auth.respond = [&](const Request &r) {
+            if (r.path != "/users/auth")
+                return http(404);
+            const auto user = r.headers.value("x-auth-user");
+            if (user == "good" && r.headers.value("x-auth-key") == "5ebe2294ecd0e0f08eab7690d2a6ee69")
+                return http(200, "{\"authorized\":\"OK\"}");
+            if (user == "gateway")
+                return http(502);
+            return http(401, "{\"message\":\"Unauthorized\"}");
+        };
+        auto check = [&](const QString &user, const QUrl &url) {
+            auto config = kosync::configFor({url.toString(), user, "secret"});
+            require(config.error.isEmpty(), "The test config was refused");
+            config.timeoutMilliseconds = 1500;
+            std::optional<kosync::AuthResult> result;
+            kosync::Client(config).authenticate([&](kosync::AuthResult r) {
+                result = r;
+            });
+            waitUntil([&] {
+                return result.has_value();
+            });
+            return *result;
+        };
+        require(check("good", auth.url()).status == kosync::Status::Ok, "A good login was refused");
+        require(auth.requests.last().method == "GET" && auth.requests.last().path == "/users/auth",
+                "The login check used the wrong request");
+        require(check("bad", auth.url()).status == kosync::Status::Unauthorized, "A bad login was accepted");
+        require(check("gateway", auth.url()).status == kosync::Status::Unavailable,
+                "A gateway error was not unavailable");
+        require(check("good", QUrl(auth.url().toString() + "/elsewhere")).status == kosync::Status::NotFound,
+                "A wrong path should read as not a kosync server");
+        const auto none = check("good", QUrl("http://127.0.0.1:1"));
+        require(none.status == kosync::Status::Unavailable && none.http == 0 && !none.error.isEmpty(),
+                "An unreachable server should report why");
     }
     return 0;
 }

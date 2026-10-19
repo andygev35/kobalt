@@ -119,6 +119,8 @@ void Reader::sleepReader() {
     book->pushKosync();
     checkpoint();
     closeSearch();
+    kosyncPanel->stop();
+    kosyncPanel->hide();
     dismissLookup();
     lifecycleHidden = true;
     clockTimer->stop();
@@ -263,10 +265,10 @@ bool Reader::event(QEvent *event) {
                     !appearanceEdit.panelOpen() && !general->isVisible() && !choices->isVisible() &&
                         !chapterGraph->isVisible() && !linkReturn->isVisible() && !dictionaryPanel->isVisible() &&
                         !searchPanel->isVisible() && !linksActive() && !lookupPending &&
-                        !acknowledgments->isVisible() && !bookmarkList->isVisible() && !lightPopup->isVisible() &&
-                        !busyNotice->isVisible() && !syncDialog && !finishDialog && !bookmarkErrorDialog &&
-                        !formattingWarningDialog && !settingsWriteErrorDialog && !services.suspended() &&
-                        page->image.text("kobalt.animation_text_only") == "true");
+                        !acknowledgments->isVisible() && !kosyncPanel->isVisible() && !bookmarkList->isVisible() &&
+                        !lightPopup->isVisible() && !busyNotice->isVisible() && !syncDialog && !finishDialog &&
+                        !bookmarkErrorDialog && !formattingWarningDialog && !settingsWriteErrorDialog &&
+                        !services.suspended() && page->image.text("kobalt.animation_text_only") == "true");
         // These panels hold text and line controls. Changes inside them can
         // use a partial refresh; showing the whole panel keeps its policy.
         QWidget *partialPanel = nullptr;
@@ -454,6 +456,8 @@ void Reader::hideEvent(QHideEvent *event) {
     book->stopReading();
     appearanceEdit.clearContinuation();
     closeSearch();
+    kosyncPanel->stop();
+    kosyncPanel->hide();
     services.cancelAnimation();
     page->animationDirection = 0;
     setProperty("reader_animation_direction", 0);
@@ -497,6 +501,7 @@ void Reader::resizeEvent(QResizeEvent *) {
     choices->setGeometry(rect());
     fitSettings();
     acknowledgments->setGeometry(rect());
+    kosyncPanel->setGeometry(rect());
     searchPanel->setGeometry(rect());
     const int bookmarkTop = navigation ? navigation->statusHeight() : 0;
     bookmarkList->setGeometry(0, bookmarkTop, width(),
@@ -517,6 +522,8 @@ void Reader::closeEvent(QCloseEvent *event) {
     model->cancelPendingTurn();
     appearanceEdit.clearContinuation();
     closeSearch();
+    kosyncPanel->stop();
+    kosyncPanel->hide();
     dismissLookup();
     if (light)
         lightPopup->hide();
@@ -558,7 +565,7 @@ void Reader::updateOrientationBlock() {
                                 appearanceEdit.panelOpen() || bool(syncDialog) || bool(finishDialog) ||
                                 bool(bookmarkErrorDialog) || bool(formattingWarningDialog) ||
                                 bool(settingsWriteErrorDialog) || dictionaryPanel->isVisible() ||
-                                searchPanel->isVisible() || linksActive() || lookupPending);
+                                searchPanel->isVisible() || kosyncPanel->isVisible() || linksActive() || lookupPending);
 }
 
 void Reader::closeSearch() {
@@ -620,7 +627,8 @@ void Reader::updateLinkReturn() {
     syncLinkDiscovery();
     const bool available = !linkHistory.isEmpty() && !model->busy() && !lifecycleHidden && !closing && !linksActive() &&
                            !lookupPending && !general->isVisible() && !acknowledgments->isVisible() &&
-                           !bookmarkList->isVisible() && !lightPopup->isVisible() && !syncDialog && !finishDialog &&
+                           !kosyncPanel->isVisible() && !bookmarkList->isVisible() && !lightPopup->isVisible() &&
+                           !syncDialog && !finishDialog &&
                            (bottomControls->isVisible() ||
                             (topControls->isVisible() && !menu->isVisible() && !chapterGraph->isVisible())) &&
                            !choices->isVisible() && !searchPanel->isVisible() && !dictionaryPanel->isVisible();
@@ -776,8 +784,8 @@ void Reader::dismissLookup(bool keepGesture) {
 
 void Reader::lookupWord(QPoint point, bool checkLink) {
     if (closing || lifecycleHidden || services.suspended() || model->busy() || appearanceEdit.panelOpen() ||
-        topControls->isVisible() || choices->isVisible() || acknowledgments->isVisible() || syncDialog ||
-        finishDialog || dictionaryPanel->isVisible() || searchPanel->isVisible() || linksActive())
+        topControls->isVisible() || choices->isVisible() || acknowledgments->isVisible() || kosyncPanel->isVisible() ||
+        syncDialog || finishDialog || dictionaryPanel->isVisible() || searchPanel->isVisible() || linksActive())
         return;
     if (checkLink && openLink(point))
         return;
@@ -927,8 +935,9 @@ void Reader::syncLinkDiscovery() {
     const bool blocked = model->busy() || lifecycleHidden || closing || services.suspended() ||
                          appearanceEdit.panelOpen() || general->isVisible() || menu->isVisible() ||
                          choices->isVisible() || chapterGraph->isVisible() || lightPopup->isVisible() ||
-                         bookmarkList->isVisible() || acknowledgments->isVisible() || searchPanel->isVisible() ||
-                         dictionaryPanel->isVisible() || linksActive() || lookupPending || syncDialog || finishDialog;
+                         bookmarkList->isVisible() || acknowledgments->isVisible() || kosyncPanel->isVisible() ||
+                         searchPanel->isVisible() || dictionaryPanel->isVisible() || linksActive() || lookupPending ||
+                         syncDialog || finishDialog;
     if (blocked || (revealingLinks && revealedPosition != model->state().value("position").toString()))
         hideRevealedLinks();
     const int count = model->pageLinks().size();
@@ -1087,7 +1096,8 @@ void Reader::syncNavigation() {
             {bottomControls, menu, chapterGraph,
              bookmarkList->isVisible() ? static_cast<QWidget *>(bookmarkList) : static_cast<QWidget *>(choices),
              chapters || bookmarkList->isVisible(),
-             topControls->isVisible() && !searchPanel->isVisible() && !acknowledgments->isVisible(),
+             topControls->isVisible() && !searchPanel->isVisible() && !acknowledgments->isVisible() &&
+                 !kosyncPanel->isVisible(),
              !model->busy() && !appearanceEdit.applying(), services.lightAvailable(), active,
              linkReturnAvailable ? strings::get("reader.return_page").arg(linkHistory.last().page + 1) : QString(),
              strings::get("navigation.page_count").arg(model->page() + 1).arg(model->pages()), topActions, general,
@@ -1102,10 +1112,11 @@ void Reader::syncNavigation() {
         const QRect bounds = navigation->panelBounds(size(), chapterGraph->height());
         // Settings always takes precedence; Stats with Settings is too busy.
         bool covered = !topControls->isVisible() || general->isVisible();
-        for (const QWidget *panel : {static_cast<QWidget *>(menu), static_cast<QWidget *>(lightPopup),
-                                     static_cast<QWidget *>(choices), static_cast<QWidget *>(general),
-                                     static_cast<QWidget *>(searchPanel), static_cast<QWidget *>(dictionaryPanel),
-                                     static_cast<QWidget *>(acknowledgments), static_cast<QWidget *>(bookmarkList)})
+        for (const QWidget *panel :
+             {static_cast<QWidget *>(menu), static_cast<QWidget *>(lightPopup), static_cast<QWidget *>(choices),
+              static_cast<QWidget *>(general), static_cast<QWidget *>(searchPanel),
+              static_cast<QWidget *>(dictionaryPanel), static_cast<QWidget *>(acknowledgments),
+              static_cast<QWidget *>(kosyncPanel), static_cast<QWidget *>(bookmarkList)})
             covered = covered || (panel->isVisible() && panel->geometry().intersects(bounds));
         if (covered == chapterGraph->isVisible()) {
             if (covered)
@@ -1287,6 +1298,7 @@ bool Reader::pageList(int direction) {
                     : bookmarkList->isVisible()                 ? static_cast<QWidget *>(bookmarkList)
                     : searchPanel->isVisible()                  ? static_cast<QWidget *>(searchPanel)
                     : acknowledgments->isVisible()              ? acknowledgments
+                    : kosyncPanel->isVisible()                  ? static_cast<QWidget *>(kosyncPanel)
                                                                 : nullptr;
     if (!list)
         return false;
@@ -1318,7 +1330,7 @@ void Reader::pageButton(int direction) {
     if (!model->canTurn() || appearanceEdit.panelOpen() || general->isVisible() || choices->isVisible() ||
         (chapterGraph->isVisible() && !statsPinned()) || revealingLinks || dictionaryPanel->isVisible() ||
         searchPanel->isVisible() || linksActive() || lookupPending || acknowledgments->isVisible() ||
-        bookmarkList->isVisible() || lightPopup->isVisible())
+        kosyncPanel->isVisible() || bookmarkList->isVisible() || lightPopup->isVisible())
         return;
     turnPage(direction);
 }

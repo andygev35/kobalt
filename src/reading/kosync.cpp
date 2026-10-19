@@ -99,6 +99,58 @@ Config parseConfig(const QByteArray &json, QString deviceId) {
     return config;
 }
 
+StoredLogin readLogin(const QString &configPath) {
+    StoredLogin result;
+    const auto object = storage::readJson(configPath);
+    result.server = object.value("server").toString().trimmed();
+    result.username = object.value("username").toString();
+    result.hasPassword =
+        !object.value("password").toString().isEmpty() || !object.value("userkey").toString().isEmpty();
+    result.enabled = object.value("enabled").toBool(true);
+    return result;
+}
+
+Config configFor(const Login &login, const QString &configPath) {
+    auto object = qt::object({{"server", login.server}, {"username", login.username}, {"password", login.password}});
+    if (login.password.isEmpty() && !configPath.isEmpty()) {
+        const auto stored = storage::readJson(configPath);
+        object.insert("password", stored.value("password"));
+        object.insert("userkey", stored.value("userkey"));
+        object.insert("timeout_seconds", stored.value("timeout_seconds"));
+    }
+    return parseConfig(QJsonDocument(object).toJson(QJsonDocument::Compact), QStringLiteral("settings"));
+}
+
+bool writeLogin(const QString &configPath, const Login &login, QString *error) {
+    auto fail = [error](const QString &message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    const auto current = storage::readJsonFile(configPath);
+    // A damaged file is left alone rather than replaced with a partial one.
+    if (current.status != storage::ReadStatus::Ok && current.status != storage::ReadStatus::Missing)
+        return fail(QStringLiteral("kosync.json could not be read"));
+    auto object = current.object;
+    const bool keepPassword = login.password.isEmpty() && (!object.value("password").toString().isEmpty() ||
+                                                           !object.value("userkey").toString().isEmpty());
+    // Validate with exactly the rules the reader applies when it opens a book.
+    const auto check =
+        configFor({login.server, login.username, keepPassword ? QStringLiteral("kept") : login.password});
+    if (!check.error.isEmpty())
+        return fail(check.error);
+    object.insert("server", check.server.toString());
+    object.insert("username", login.username);
+    object.insert("enabled", true);
+    if (!keepPassword) {
+        object.insert("password", login.password);
+        object.remove("userkey");
+    }
+    if (configPath.isEmpty() || !storage::writeJson(configPath, object))
+        return fail(QStringLiteral("kosync.json could not be saved"));
+    return true;
+}
+
 Config loadConfig(const QString &configPath, const QString &devicePath) {
     QFile file(configPath);
     if (configPath.isEmpty() || !file.exists())
@@ -221,6 +273,17 @@ void Client::pull(const QString &document, std::function<void(PullResult)> done)
             if (!result.progress.valid())
                 result.status = Status::NotFound;
         }
+        done(std::move(result));
+    });
+}
+
+void Client::authenticate(std::function<void(AuthResult)> done) const {
+    auto *reply = manager_->get(request(QStringLiteral("/users/auth")));
+    watch(reply, config_.timeoutMilliseconds, [done](Answer answer) {
+        AuthResult result;
+        result.status = statusFor(answer.http);
+        result.http = answer.http;
+        result.error = answer.error;
         done(std::move(result));
     });
 }
